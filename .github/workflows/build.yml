@@ -25,6 +25,11 @@ jobs:
         with:
           packages: 'platform-tools'
 
+      - name: Siapkan Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Siapkan Gradle
         uses: gradle/actions/setup-gradle@v4
         with:

@@ -1,9 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+
     <application
+        android:name="com.chaquo.python.android.PyApplication"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:label="Video Downloader Hub"
         android:usesCleartextTraffic="false">
+
         <activity
             android:name=".MainActivity"
             android:exported="true">
