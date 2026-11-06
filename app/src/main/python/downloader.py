@@ -32,7 +32,7 @@ def download(url, out_dir, progress_path, mode="Hub"):
     options = {
         # Utamakan satu file yang sudah berisi video dan audio.
         # Tidak membutuhkan proses penggabungan FFmpeg.
-        "format": "best[ext=mp4][protocol=https]/best[protocol=https]/best",
+        "format": "best",
         "outtmpl": os.path.join(out_dir, "%(title).100B [%(id)s].%(ext)s"),
         "noplaylist": True,
         "quiet": True,
