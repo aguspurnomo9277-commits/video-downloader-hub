@@ -22,6 +22,8 @@ jobs:
 
       - name: Siapkan Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
 
       - name: Siapkan Gradle
         uses: gradle/actions/setup-gradle@v4
