@@ -13,8 +13,8 @@ android {
         applicationId = "com.agus.videodownloaderhub"
         minSdk = 24
         targetSdk = 35
-        versionCode = 7
-        versionName = "1.6"
+        versionCode = 8
+        versionName = "1.7"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
