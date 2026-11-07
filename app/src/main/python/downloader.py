@@ -30,11 +30,17 @@ class DiagnosticLogger:
         self.messages.append("ERROR: " + str(message))
 
 
-def download(url, out_dir, progress_path, mode="Hub"):
+def download(url, out_dir, progress_path, mode="Hub", qjs_path=None):
     parsed = urlparse(url.strip())
 
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise ValueError("Tautan video tidak valid.")
+
+    if not qjs_path or not os.path.isfile(qjs_path):
+        raise RuntimeError(
+            "Mesin JavaScript QuickJS belum tersedia di aplikasi. "
+            "Silakan gunakan APK hasil build terbaru."
+        )
 
     os.makedirs(out_dir, exist_ok=True)
 
@@ -65,6 +71,9 @@ def download(url, out_dir, progress_path, mode="Hub"):
         "retries": 3,
         "socket_timeout": 30,
         "progress_hooks": [hook],
+        "js_runtimes": {
+            "quickjs": {"path": qjs_path}
+        },
     }
 
     save_progress(progress_path, {
