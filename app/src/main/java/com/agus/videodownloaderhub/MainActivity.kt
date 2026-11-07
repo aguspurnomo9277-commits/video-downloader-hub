@@ -7,6 +7,12 @@ import android.os.Build
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.app.DownloadManager
+import android.webkit.CookieManager
+import android.webkit.WebChromeClient
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.widget.Toast
 import android.provider.MediaStore
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -19,6 +25,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -195,17 +202,14 @@ fun DownloaderScreen(
                 tempFile.copyTo(cookiesFile, overwrite = true)
                 tempFile.delete()
                 cookiesReady = true
-                cookiesMessage = "File cookies berhasil disimpan apa adanya. Format dan sesi akan diperiksa oleh yt-dlp saat mengunduh."
-                cookiesFile.writeText(normalized, Charsets.UTF_8)
-                tempFile.delete()
-                cookiesReady = true
-                cookiesMessage = "Cookies Instagram diterima (sessionid ditemukan) dan tersimpan privat di perangkat."
+                cookiesMessage = "File cookies tersimpan privat di perangkat."
             } catch (e: Exception) {
                 cookiesMessage = "Gagal impor: ${e.message ?: "file tidak valid"}"
             }
         }
     }
 
+    var showFastDl by remember { mutableStateOf(false) }
     var url by remember { mutableStateOf("") }
     var mode by remember { mutableStateOf("Hub") }
     var message by remember { mutableStateOf("Tempel tautan video untuk memulai.") }
@@ -220,7 +224,9 @@ fun DownloaderScreen(
     }
 
     MaterialTheme {
-        Column(
+        if (showFastDl) {
+            FastDlScreen(onBack = { showFastDl = false })
+        } else Column(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0xFF101116))
@@ -281,34 +287,24 @@ fun DownloaderScreen(
 
             if (platform == "Instagram") {
                 Spacer(Modifier.height(14.dp))
-                Text("LOGIN INSTAGRAM (OPSIONAL)", color = Color.White, fontSize = 12.sp)
-                Spacer(Modifier.height(6.dp))
-                Text(cookiesMessage, color = Color.LightGray, fontSize = 12.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = { cookiePicker.launch(arrayOf("*/*")) },
-                        enabled = !busy
-                    ) { Text(if (cookiesReady) "GANTI COOKIES" else "IMPOR COOKIES") }
-                    if (cookiesReady) {
-                        OutlinedButton(
-                            onClick = {
-                                cookiesFile.delete()
-                                cookiesReady = false
-                                cookiesMessage = "Cookies Instagram sudah dihapus dari perangkat."
-                            },
-                            enabled = !busy
-                        ) { Text("HAPUS") }
-                    }
-                }
+                Text(
+                    "Instagram akan diproses melalui FastDl di dalam aplikasi. Tempel tautan publik Instagram pada halaman FastDl.",
+                    color = Color.LightGray,
+                    fontSize = 12.sp
+                )
             }
 
             Spacer(Modifier.height(18.dp))
             Button(
                 onClick = {
-                    onDownload(url.trim(), mode, if (cookiesReady) cookiesFile.absolutePath else "") { text, value, active ->
-                        message = text
-                        progress = value
-                        busy = active
+                    if (platform == "Instagram") {
+                        showFastDl = true
+                    } else {
+                        onDownload(url.trim(), mode, "") { text, value, active ->
+                            message = text
+                            progress = value
+                            busy = active
+                        }
                     }
                 },
                 enabled = !busy && url.startsWith("http"),
@@ -317,7 +313,7 @@ fun DownloaderScreen(
                     containerColor = Color(0xFF6555E8)
                 )
             ) {
-                Text(if (busy) "SEDANG MENGUNDUH..." else "MULAI UNDUH")
+                Text(if (busy) "SEDANG MENGUNDUH..." else if (platform == "Instagram") "BUKA FASTDL" else "MULAI UNDUH")
             }
 
             if (busy || progress > 0f) {
@@ -334,7 +330,91 @@ fun DownloaderScreen(
             Text(message, color = Color.LightGray, fontSize = 13.sp)
 
             Spacer(Modifier.weight(1f))
-            Text("VIDEO DOWNLOADER HUB • v1.7", color = Color.Gray, fontSize = 11.sp)
+            Text("VIDEO DOWNLOADER HUB • v1.8", color = Color.Gray, fontSize = 11.sp)
         }
+    }
+}
+
+ 
+@Composable
+private fun FastDlScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val webView = remember {
+        WebView(context).apply {
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.loadsImagesAutomatically = true
+            webViewClient = WebViewClient()
+            webChromeClient = WebChromeClient()
+            setDownloadListener { downloadUrl, userAgent, contentDisposition, mimeType, _ ->
+                try {
+                    val request = DownloadManager.Request(Uri.parse(downloadUrl))
+                    request.setMimeType(mimeType ?: "application/octet-stream")
+                    request.addRequestHeader("User-Agent", userAgent)
+                    CookieManager.getInstance().getCookie(downloadUrl)?.let {
+                        request.addRequestHeader("Cookie", it)
+                    }
+                    request.setTitle("Video Downloader Hub")
+                    request.setDescription("Mengunduh media dari FastDl")
+                    request.setNotificationVisibility(
+                        DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+                    )
+                    val name = android.webkit.URLUtil.guessFileName(
+                        downloadUrl, contentDisposition, mimeType
+                    ).replace(Regex("[^A-Za-z0-9._-]"), "_")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        request.setDestinationInExternalPublicDir(
+                            Environment.DIRECTORY_DOWNLOADS,
+                            "Video Downloader Hub/$name"
+                        )
+                    } else {
+                        request.setDestinationInExternalFilesDir(
+                            context, Environment.DIRECTORY_DOWNLOADS, name
+                        )
+                    }
+                    val manager = context.getSystemService(
+                        android.content.Context.DOWNLOAD_SERVICE
+                    ) as DownloadManager
+                    manager.enqueue(request)
+                    Toast.makeText(context, "Unduhan dimulai. Periksa notifikasi atau folder Download.", Toast.LENGTH_LONG).show()
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Gagal memulai unduhan: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+            loadUrl("https://fastdl.app/id3Uw")
+        }
+    }
+
+    DisposableEffect(webView) {
+        onDispose {
+            webView.stopLoading()
+            webView.destroy()
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF101116))
+            .padding(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            OutlinedButton(onClick = onBack) { Text("KEMBALI") }
+            OutlinedButton(onClick = { webView.reload() }) { Text("MUAT ULANG") }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "FASTDL • Unduh hanya konten publik yang kamu miliki atau diizinkan untuk disimpan.",
+            color = Color.LightGray,
+            fontSize = 12.sp
+        )
+        Spacer(Modifier.height(8.dp))
+        AndroidView(
+            factory = { webView },
+            modifier = Modifier.fillMaxSize()
+        )
     }
 }
