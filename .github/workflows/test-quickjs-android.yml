@@ -13,7 +13,10 @@ jobs:
       - name: Siapkan Android SDK dan NDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platform-tools;ndk;27.2.12479018;cmake;3.22.1'
+          packages: |
+            platform-tools
+            ndk;27.2.12479018
+            cmake;3.22.1
 
       - name: Ambil source QuickJS-NG
         run: git clone --depth 1 https://github.com/quickjs-ng/quickjs.git quickjs-ng
