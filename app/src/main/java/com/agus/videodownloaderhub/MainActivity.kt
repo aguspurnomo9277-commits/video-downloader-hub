@@ -70,12 +70,18 @@ class MainActivity : ComponentActivity() {
         executor.execute {
             try {
                 val module = Python.getInstance().getModule("downloader")
+                val qjsPath = File(
+                    applicationInfo.nativeLibraryDir,
+                    "libqjs.so"
+                ).absolutePath
+
                 val result = module.callAttr(
                     "download",
                     url,
                     output.absolutePath,
                     progressFile.absolutePath,
-                    mode
+                    mode,
+                    qjsPath
                 ).toString()
 
                 val saved = saveToDownloads(File(result))
@@ -263,7 +269,7 @@ fun DownloaderScreen(
             Text(message, color = Color.LightGray, fontSize = 13.sp)
 
             Spacer(Modifier.weight(1f))
-            Text("VIDEO DOWNLOADER HUB • v1.1", color = Color.Gray, fontSize = 11.sp)
+            Text("VIDEO DOWNLOADER HUB • v1.2", color = Color.Gray, fontSize = 11.sp)
         }
     }
 }
