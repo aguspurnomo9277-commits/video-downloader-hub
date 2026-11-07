@@ -28,6 +28,7 @@ import java.io.File
 import java.io.IOException
 import java.util.concurrent.Executors
 import org.json.JSONObject
+import org.json.JSONArray
 
 class MainActivity : ComponentActivity() {
     private val executor = Executors.newSingleThreadExecutor()
@@ -185,22 +186,61 @@ fun DownloaderScreen(
                     tempFile.outputStream().use { output -> input.copyTo(output) }
                 } ?: throw IOException("File tidak dapat dibaca.")
 
-                val cookieText = tempFile.readText()
-                val looksLikeInstagramCookies =
-                    cookieText.contains("instagram.com", ignoreCase = true) &&
-                    cookieText.contains("sessionid", ignoreCase = true)
-
-                if (!looksLikeInstagramCookies) {
+                val rawText = tempFile.readText(Charsets.UTF_8).removePrefix("\uFEFF").trim()
+                if (rawText.isBlank()) {
                     tempFile.delete()
-                    throw IOException("File bukan cookies Instagram Netscape yang valid.")
+                    throw IOException("File cookies kosong.")
                 }
 
-                if (!tempFile.renameTo(cookiesFile)) {
-                    cookiesFile.writeText(cookieText)
-                    tempFile.delete()
+                // yt-dlp expects Netscape cookie format. Accept standard Netscape TXT
+                // and convert common JSON cookie exports without displaying cookie values.
+                val normalized = if (rawText.startsWith("[") || rawText.startsWith("{")) {
+                    val array = if (rawText.startsWith("[")) JSONArray(rawText)
+                    else JSONObject(rawText).optJSONArray("cookies")
+                        ?: throw IOException("JSON tidak berisi daftar cookies.")
+                    val lines = mutableListOf("# Netscape HTTP Cookie File")
+                    var hasInstagramSession = false
+                    for (i in 0 until array.length()) {
+                        val item = array.optJSONObject(i) ?: continue
+                        val domain = item.optString("domain")
+                        val name = item.optString("name")
+                        val value = item.optString("value")
+                        if (!domain.contains("instagram.com", ignoreCase = true) ||
+                            name.isBlank() || value.isBlank()) continue
+                        if (name.equals("sessionid", ignoreCase = true)) hasInstagramSession = true
+                        val hostOnly = item.optBoolean("hostOnly", false)
+                        val includeSubdomains = if (hostOnly) "FALSE" else "TRUE"
+                        val path = item.optString("path", "/").ifBlank { "/" }
+                        val secure = if (item.optBoolean("secure", false)) "TRUE" else "FALSE"
+                        val expiry = item.optDouble("expirationDate", 0.0).toLong().toString()
+                        val cookieDomain = if (item.optBoolean("httpOnly", false))
+                            "#HttpOnly_$domain" else domain
+                        lines.add(listOf(cookieDomain, includeSubdomains, path, secure, expiry, name, value).joinToString("\t"))
+                    }
+                    if (!hasInstagramSession) throw IOException("JSON tidak memuat cookie sessionid Instagram.")
+                    lines.joinToString("\n")
+                } else {
+                    val lines = rawText.lines()
+                    val hasInstagramSession = lines.any { line ->
+                        val fields = line.removePrefix("#HttpOnly_").split("\t")
+                        fields.size >= 7 &&
+                            fields[0].contains("instagram.com", ignoreCase = true) &&
+                            fields[5].equals("sessionid", ignoreCase = true) &&
+                            fields[6].isNotBlank()
+                    }
+                    if (!hasInstagramSession) {
+                        throw IOException("TXT tidak memuat baris Netscape sessionid Instagram. Ekspor ulang khusus instagram.com.")
+                    }
+                    if (lines.none { it.startsWith("# Netscape HTTP Cookie File") || it.startsWith("# HTTP Cookie File") || it.startsWith("#HttpOnly_") || it.split("\t").size >= 7 }) {
+                        throw IOException("Format TXT tidak dikenali. Pilih hasil ekspor cookies.txt, bukan halaman web.")
+                    }
+                    rawText
                 }
+
+                cookiesFile.writeText(normalized, Charsets.UTF_8)
+                tempFile.delete()
                 cookiesReady = true
-                cookiesMessage = "Cookies Instagram tersimpan secara privat di perangkat."
+                cookiesMessage = "Cookies Instagram valid dan tersimpan privat di perangkat."
             } catch (e: Exception) {
                 cookiesMessage = "Gagal impor cookies: ${e.message ?: "file tidak valid"}"
             }
@@ -287,7 +327,7 @@ fun DownloaderScreen(
                 Text(cookiesMessage, color = Color.LightGray, fontSize = 12.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
-                        onClick = { cookiePicker.launch(arrayOf("text/*", "application/octet-stream")) },
+                        onClick = { cookiePicker.launch(arrayOf("*/*")) },
                         enabled = !busy
                     ) { Text(if (cookiesReady) "GANTI COOKIES" else "IMPOR COOKIES") }
                     if (cookiesReady) {
