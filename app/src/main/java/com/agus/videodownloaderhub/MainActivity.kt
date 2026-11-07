@@ -9,6 +9,8 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -18,6 +20,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.chaquo.python.Python
@@ -33,8 +36,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            DownloaderScreen { url, mode, update ->
-                startDownload(url, mode, update)
+            DownloaderScreen { url, mode, cookiesPath, update ->
+                startDownload(url, mode, cookiesPath, update)
             }
         }
     }
@@ -42,6 +45,7 @@ class MainActivity : ComponentActivity() {
     private fun startDownload(
         url: String,
         mode: String,
+        cookiesPath: String,
         update: (String, Float, Boolean) -> Unit
     ) {
         val output = File(cacheDir, "video_downloads").apply { mkdirs() }
@@ -81,7 +85,8 @@ class MainActivity : ComponentActivity() {
                     output.absolutePath,
                     progressFile.absolutePath,
                     mode,
-                    qjsPath
+                    qjsPath,
+                    cookiesPath
                 ).toString()
 
                 val saved = saveToDownloads(File(result))
@@ -161,9 +166,47 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun DownloaderScreen(
     onDownload: (
-        String, String, (String, Float, Boolean) -> Unit
+        String, String, String, (String, Float, Boolean) -> Unit
     ) -> Unit
 ) {
+    val context = LocalContext.current
+    val cookiesFile = remember { File(context.filesDir, "instagram_cookies.txt") }
+    var cookiesReady by remember { mutableStateOf(cookiesFile.exists() && cookiesFile.length() > 0) }
+    var cookiesMessage by remember {
+        mutableStateOf(if (cookiesReady) "Cookies Instagram tersimpan di perangkat." else "Cookies Instagram belum diimpor.")
+    }
+    val cookiePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val tempFile = File(context.filesDir, "instagram_cookies.tmp")
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    tempFile.outputStream().use { output -> input.copyTo(output) }
+                } ?: throw IOException("File tidak dapat dibaca.")
+
+                val cookieText = tempFile.readText()
+                val looksLikeInstagramCookies =
+                    cookieText.contains("instagram.com", ignoreCase = true) &&
+                    cookieText.contains("sessionid", ignoreCase = true)
+
+                if (!looksLikeInstagramCookies) {
+                    tempFile.delete()
+                    throw IOException("File bukan cookies Instagram Netscape yang valid.")
+                }
+
+                if (!tempFile.renameTo(cookiesFile)) {
+                    cookiesFile.writeText(cookieText)
+                    tempFile.delete()
+                }
+                cookiesReady = true
+                cookiesMessage = "Cookies Instagram tersimpan secara privat di perangkat."
+            } catch (e: Exception) {
+                cookiesMessage = "Gagal impor cookies: ${e.message ?: "file tidak valid"}"
+            }
+        }
+    }
+
     var url by remember { mutableStateOf("") }
     var mode by remember { mutableStateOf("Hub") }
     var message by remember { mutableStateOf("Tempel tautan video untuk memulai.") }
@@ -237,10 +280,33 @@ fun DownloaderScreen(
                 color = Color(0xFFB7ACFF)
             )
 
+            if (platform == "Instagram") {
+                Spacer(Modifier.height(14.dp))
+                Text("LOGIN INSTAGRAM (OPSIONAL)", color = Color.White, fontSize = 12.sp)
+                Spacer(Modifier.height(6.dp))
+                Text(cookiesMessage, color = Color.LightGray, fontSize = 12.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { cookiePicker.launch(arrayOf("text/*", "application/octet-stream")) },
+                        enabled = !busy
+                    ) { Text(if (cookiesReady) "GANTI COOKIES" else "IMPOR COOKIES") }
+                    if (cookiesReady) {
+                        OutlinedButton(
+                            onClick = {
+                                cookiesFile.delete()
+                                cookiesReady = false
+                                cookiesMessage = "Cookies Instagram sudah dihapus dari perangkat."
+                            },
+                            enabled = !busy
+                        ) { Text("HAPUS") }
+                    }
+                }
+            }
+
             Spacer(Modifier.height(18.dp))
             Button(
                 onClick = {
-                    onDownload(url.trim(), mode) { text, value, active ->
+                    onDownload(url.trim(), mode, if (cookiesReady) cookiesFile.absolutePath else "") { text, value, active ->
                         message = text
                         progress = value
                         busy = active
