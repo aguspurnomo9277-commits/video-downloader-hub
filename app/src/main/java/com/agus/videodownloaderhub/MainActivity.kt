@@ -186,8 +186,25 @@ fun DownloaderScreen(
                     tempFile.outputStream().use { output -> input.copyTo(output) }
                 } ?: throw IOException("File tidak dapat dibaca.")
 
-                val rawText = tempFile.readText(Charsets.UTF_8)
-                    .removePrefix("\uFEFF")
+                val rawBytes = tempFile.readBytes()
+                // Detect common Windows/Android text encodings and strip BOM/NUL bytes.
+                val decodedText = when {
+                    rawBytes.size >= 2 && rawBytes[0] == 0xFF.toByte() && rawBytes[1] == 0xFE.toByte() ->
+                        String(rawBytes, 2, rawBytes.size - 2, Charsets.UTF_16LE)
+                    rawBytes.size >= 2 && rawBytes[0] == 0xFE.toByte() && rawBytes[1] == 0xFF.toByte() ->
+                        String(rawBytes, 2, rawBytes.size - 2, Charsets.UTF_16BE)
+                    rawBytes.size >= 3 && rawBytes[0] == 0xEF.toByte() && rawBytes[1] == 0xBB.toByte() && rawBytes[2] == 0xBF.toByte() ->
+                        String(rawBytes, 3, rawBytes.size - 3, Charsets.UTF_8)
+                    else -> {
+                        val utf8 = String(rawBytes, Charsets.UTF_8)
+                        if (utf8.count { it == '\u0000' } > 0) {
+                            String(rawBytes, Charsets.UTF_16LE)
+                        } else utf8
+                    }
+                }
+                val rawText = decodedText
+                    .replace("\uFEFF", "")
+                    .replace("\u0000", "")
                     .replace("\r\n", "\n")
                     .replace("\r", "\n")
                     .trim()
@@ -230,8 +247,9 @@ fun DownloaderScreen(
                         val line = original.trim()
                         if (line.isBlank() || (line.startsWith("#") && !line.startsWith("#HttpOnly_"))) return@mapNotNull null
                         val data = if (line.startsWith("#HttpOnly_")) line.removePrefix("#HttpOnly_") else line
-                        val fields = data.split(Regex("\\s+"), limit = 7)
-                        if (fields.size < 7) null else fields
+                        // Netscape fields: domain, includeSubdomains, path, secure, expiry, name, value.
+                        val fields = data.split(Regex("[\\t ]+"), limit = 7)
+                        if (fields.size >= 7) fields else null
                     }
                     val hasInstagramSession = cookieRows.any { fields ->
                         fields[0].contains("instagram.com", ignoreCase = true) &&
