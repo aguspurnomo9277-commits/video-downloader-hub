@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - integrate/quickjs-youtube-runtime
 
 jobs:
   build:
@@ -20,10 +21,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Siapkan Android SDK
+      - name: Siapkan Android SDK, NDK, dan CMake
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platform-tools'
+          packages: ''
+
+      - name: Instal komponen Android
+        run: |
+          sdkmanager "platform-tools" "ndk;27.2.12479018" "cmake;3.22.1"
 
       - name: Siapkan Python 3.11
         uses: actions/setup-python@v5
@@ -34,6 +39,22 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.10.2"
+
+      - name: Build QuickJS-NG untuk Android ARM64
+        run: |
+          git clone --depth 1 https://github.com/quickjs-ng/quickjs.git quickjs-ng
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          cmake -S quickjs-ng -B quickjs-ng/build \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-24 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DQJS_BUILD_LIBC=ON
+          cmake --build quickjs-ng/build --target qjs_exe --parallel 2
+          test -f quickjs-ng/build/qjs
+          mkdir -p app/src/main/jniLibs/arm64-v8a
+          install -m 0755 quickjs-ng/build/qjs app/src/main/jniLibs/arm64-v8a/libqjs.so
+          file app/src/main/jniLibs/arm64-v8a/libqjs.so
 
       - name: Build APK
         run: gradle assembleDebug
