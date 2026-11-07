@@ -13,11 +13,17 @@ android {
         applicationId = "com.agus.videodownloaderhub"
         minSdk = 24
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
+        }
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
 
@@ -39,7 +45,7 @@ chaquopy {
     defaultConfig {
         version = "3.11"
         pip {
-            install("yt-dlp")
+            install("yt-dlp[default]")
         }
     }
 }
