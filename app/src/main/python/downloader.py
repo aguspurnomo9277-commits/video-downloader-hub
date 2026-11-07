@@ -30,7 +30,7 @@ class DiagnosticLogger:
         self.messages.append("ERROR: " + str(message))
 
 
-def download(url, out_dir, progress_path, mode="Hub", qjs_path=None):
+def download(url, out_dir, progress_path, mode="Hub", qjs_path=None, cookies_path=None):
     parsed = urlparse(url.strip())
 
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
@@ -75,6 +75,11 @@ def download(url, out_dir, progress_path, mode="Hub", qjs_path=None):
             "quickjs": {"path": qjs_path}
         },
     }
+
+    # Instagram may require an authenticated session after anonymous rate limits.
+    # The cookie file is imported locally by the user and stays in app-private storage.
+    if cookies_path and os.path.isfile(cookies_path) and os.path.getsize(cookies_path) > 0:
+        options["cookiefile"] = cookies_path
 
     save_progress(progress_path, {
         "status": "Memeriksa sumber video...",
