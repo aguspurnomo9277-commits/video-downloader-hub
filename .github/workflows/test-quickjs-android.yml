@@ -10,13 +10,14 @@ jobs:
   build-quickjs:
     runs-on: ubuntu-latest
     steps:
-      - name: Siapkan Android SDK dan NDK
+      - name: Siapkan Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: |
-            platform-tools
-            ndk;27.2.12479018
-            cmake;3.22.1
+          packages: ''
+
+      - name: Install NDK dan CMake
+        run: |
+          sdkmanager "platform-tools" "ndk;27.2.12479018" "cmake;3.22.1"
 
       - name: Ambil source QuickJS-NG
         run: git clone --depth 1 https://github.com/quickjs-ng/quickjs.git quickjs-ng
