@@ -16,7 +16,12 @@ class DiagnosticLogger:
         self.messages = []
 
     def debug(self, message):
-        pass
+        text = str(message)
+        words = ("javascript", "deno", "node", "quickjs", "format",
+                 "token", "challenge", "signature", "youtube", "nsig")
+        if any(w in text.lower() for w in words):
+            self.messages.append("DEBUG: " + text)
+            self.messages = self.messages[-30:]
 
     def warning(self, message):
         self.messages.append("PERINGATAN: " + str(message))
@@ -54,6 +59,7 @@ def download(url, out_dir, progress_path, mode="Hub"):
         ),
         "noplaylist": True,
         "quiet": True,
+        "verbose": True,
         "no_warnings": False,
         "logger": logger,
         "retries": 3,
