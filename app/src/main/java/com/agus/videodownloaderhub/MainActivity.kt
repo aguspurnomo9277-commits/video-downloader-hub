@@ -412,7 +412,7 @@ fun DownloaderScreen(
             Text(message, color = Color.LightGray, fontSize = 13.sp)
 
             Spacer(Modifier.weight(1f))
-            Text("VIDEO DOWNLOADER HUB • v1.5", color = Color.Gray, fontSize = 11.sp)
+            Text("VIDEO DOWNLOADER HUB • v1.6", color = Color.Gray, fontSize = 11.sp)
         }
     }
 }
