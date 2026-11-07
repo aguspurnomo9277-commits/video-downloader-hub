@@ -181,99 +181,21 @@ fun DownloaderScreen(
     ) { uri ->
         if (uri != null) {
             try {
+                // Preserve the selected export byte-for-byte. Do not parse or normalize it here;
+                // yt-dlp reads the original Netscape cookie file directly.
                 val tempFile = File(context.filesDir, "instagram_cookies.tmp")
                 context.contentResolver.openInputStream(uri)?.use { input ->
                     tempFile.outputStream().use { output -> input.copyTo(output) }
                 } ?: throw IOException("File tidak dapat dibaca.")
 
-                val rawBytes = tempFile.readBytes()
-                // Detect common Windows/Android text encodings and strip BOM/NUL bytes.
-                val decodedText = when {
-                    rawBytes.size >= 2 && rawBytes[0] == 0xFF.toByte() && rawBytes[1] == 0xFE.toByte() ->
-                        String(rawBytes, 2, rawBytes.size - 2, Charsets.UTF_16LE)
-                    rawBytes.size >= 2 && rawBytes[0] == 0xFE.toByte() && rawBytes[1] == 0xFF.toByte() ->
-                        String(rawBytes, 2, rawBytes.size - 2, Charsets.UTF_16BE)
-                    rawBytes.size >= 3 && rawBytes[0] == 0xEF.toByte() && rawBytes[1] == 0xBB.toByte() && rawBytes[2] == 0xBF.toByte() ->
-                        String(rawBytes, 3, rawBytes.size - 3, Charsets.UTF_8)
-                    else -> {
-                        val utf8 = String(rawBytes, Charsets.UTF_8)
-                        if (utf8.count { it == '\u0000' } > 0) {
-                            String(rawBytes, Charsets.UTF_16LE)
-                        } else utf8
-                    }
-                }
-                val rawText = decodedText
-                    .replace("\uFEFF", "")
-                    .replace("\u0000", "")
-                    .replace("\r\n", "\n")
-                    .replace("\r", "\n")
-                    .trim()
-                if (rawText.isBlank()) {
+                if (!tempFile.exists() || tempFile.length() == 0L) {
                     tempFile.delete()
-                    throw IOException("File cookies kosong.")
+                    throw IOException("File yang dipilih kosong atau tidak dapat dibaca.")
                 }
-
-                // Netscape cookie files are tab-delimited by specification, but
-                // some exporters/editors replace tabs with spaces. Parse both.
-                val normalized = if (rawText.startsWith("[") || rawText.startsWith("{")) {
-                    val array = if (rawText.startsWith("[")) JSONArray(rawText)
-                    else JSONObject(rawText).optJSONArray("cookies")
-                        ?: throw IOException("JSON tidak berisi daftar cookies.")
-                    val lines = mutableListOf("# Netscape HTTP Cookie File")
-                    var hasInstagramSession = false
-                    for (i in 0 until array.length()) {
-                        val item = array.optJSONObject(i) ?: continue
-                        val domain = item.optString("domain").trim()
-                        val name = item.optString("name").trim()
-                        val value = item.optString("value")
-                        if (!domain.contains("instagram.com", ignoreCase = true) ||
-                            name.isBlank() || value.isBlank()) continue
-                        if (name.equals("sessionid", ignoreCase = true)) hasInstagramSession = true
-                        val hostOnly = item.optBoolean("hostOnly", false)
-                        val includeSubdomains = if (hostOnly) "FALSE" else "TRUE"
-                        val path = item.optString("path", "/").ifBlank { "/" }
-                        val secure = if (item.optBoolean("secure", false)) "TRUE" else "FALSE"
-                        val expiryValue = item.optDouble("expirationDate", 0.0).toLong()
-                        val expiry = expiryValue.toString()
-                        val cookieDomain = if (item.optBoolean("httpOnly", false))
-                            "#HttpOnly_$domain" else domain
-                        lines.add(listOf(cookieDomain, includeSubdomains, path, secure, expiry, name, value).joinToString("\t"))
-                    }
-                    if (!hasInstagramSession) throw IOException("JSON terbaca, tetapi cookie sessionid Instagram tidak ditemukan. Ekspor cookies saat sudah login ke instagram.com.")
-                    lines.joinToString("\n")
-                } else {
-                    val lines = rawText.lines()
-                    val cookieRows = lines.mapNotNull { original ->
-                        val line = original.trim()
-                        if (line.isBlank() || (line.startsWith("#") && !line.startsWith("#HttpOnly_"))) return@mapNotNull null
-                        val data = if (line.startsWith("#HttpOnly_")) line.removePrefix("#HttpOnly_") else line
-                        // Netscape fields: domain, includeSubdomains, path, secure, expiry, name, value.
-                        val fields = data.split(Regex("[\\t ]+"), limit = 7)
-                        if (fields.size >= 7) fields else null
-                    }
-                    val hasInstagramSession = cookieRows.any { fields ->
-                        fields[0].contains("instagram.com", ignoreCase = true) &&
-                            fields[5].equals("sessionid", ignoreCase = true) &&
-                            fields[6].isNotBlank()
-                    }
-                    if (!hasInstagramSession) {
-                        val hasNetscapeHeader = lines.any {
-                            it.contains("Netscape HTTP Cookie File", ignoreCase = true) ||
-                            it.contains("HTTP Cookie File", ignoreCase = true)
-                        }
-                        if (!hasNetscapeHeader && cookieRows.isEmpty()) {
-                            throw IOException("Format file tidak dikenali. Pilih file cookies.txt hasil ekspor, bukan halaman HTML atau file ZIP.")
-                        }
-                        throw IOException("File terbaca sebagai TXT cookies, tetapi sessionid Instagram tidak ditemukan. Buka instagram.com, pastikan login, lalu ekspor ulang khusus domain instagram.com.")
-                    }
-                    val output = mutableListOf("# Netscape HTTP Cookie File")
-                    for (fields in cookieRows) {
-                        if (fields[0].contains("instagram.com", ignoreCase = true)) {
-                            output.add(fields.joinToString("\t"))
-                        }
-                    }
-                    output.joinToString("\n")
-                }
+                tempFile.copyTo(cookiesFile, overwrite = true)
+                tempFile.delete()
+                cookiesReady = true
+                cookiesMessage = "File cookies berhasil disimpan apa adanya. Format dan sesi akan diperiksa oleh yt-dlp saat mengunduh."
                 cookiesFile.writeText(normalized, Charsets.UTF_8)
                 tempFile.delete()
                 cookiesReady = true
@@ -412,7 +334,7 @@ fun DownloaderScreen(
             Text(message, color = Color.LightGray, fontSize = 13.sp)
 
             Spacer(Modifier.weight(1f))
-            Text("VIDEO DOWNLOADER HUB • v1.6", color = Color.Gray, fontSize = 11.sp)
+            Text("VIDEO DOWNLOADER HUB • v1.7", color = Color.Gray, fontSize = 11.sp)
         }
     }
 }
